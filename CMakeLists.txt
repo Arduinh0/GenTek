@@ -12,6 +12,7 @@ set(SOURCES
     src/distance.cpp
     src/fitness.cpp
     src/generators.cpp
+    src/genetic.cpp
     main.cpp
 )
 
