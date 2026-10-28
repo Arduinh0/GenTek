@@ -13,13 +13,12 @@
 #include <string>
 
 // ============================================================================
-// main.cpp — Fase 4: Cenário Bónus (Alta Volumetria), Telemetria de Tempo
-//                     e Organização de Ficheiros com <filesystem>
+// main.cpp — Fase 5: Menu Interativo, Execucao e Exportacao de Telemetria
 // ============================================================================
 
 static constexpr double PI = 3.14159265358979323846;
 
-/// Imprime uma rota formatada (com resumo caso tenha mais de 30 cidades).
+/// Imprime uma rota formatada (com resumo caso tenha mais de 35 cidades).
 void printRoute(const Individual& route) {
     const int n = static_cast<int>(route.size());
     std::cout << "  [";
@@ -30,7 +29,6 @@ void printRoute(const Individual& route) {
         }
         std::cout << " -> " << route[0] << "]\n";
     } else {
-        // Exibição compacta para rotas longas (ex: N=100)
         for (int i = 0; i < 10; ++i) {
             if (i > 0) std::cout << " -> ";
             std::cout << route[i];
@@ -45,9 +43,9 @@ void printRoute(const Individual& route) {
 
 /// Separador visual entre seções.
 void printSeparator(const std::string& title) {
-    std::cout << "\n" << std::string(70, '=') << "\n"
+    std::cout << "\n" << std::string(72, '=') << "\n"
               << title << "\n"
-              << std::string(70, '=') << "\n\n";
+              << std::string(72, '=') << "\n\n";
 }
 
 /// Conta o número de linhas num ficheiro para confirmação do log.
@@ -62,27 +60,77 @@ int countLinesInFile(const std::string& filename) {
     return count;
 }
 
+/// Exporta coordenadas de pontos para CSV (permite ao Python plotar as rotas).
+void exportCitiesCSV(const std::string& filename, const std::vector<Point>& cities) {
+    std::ofstream file(filename, std::ios::out | std::ios::trunc);
+    if (!file.is_open()) return;
+    file << "Cidade,X,Y\n";
+    for (size_t i = 0; i < cities.size(); ++i) {
+        file << i << "," << std::fixed << std::setprecision(6)
+             << cities[i].x << "," << cities[i].y << "\n";
+    }
+}
+
 int main() {
-    printSeparator("FASE 4: ALTA VOLUMETRIA, TELEMETRIA DE TEMPO E ORGANIZACAO");
+    printSeparator("ALGORITMO GENETICO - TSP 2D (FASE 5: INTERATIVO & PIPELINE)");
 
     // 1. Organização Dinâmica de Diretórios via <filesystem>
     const std::filesystem::path outputDir = "resultados";
     std::filesystem::create_directories(outputDir);
-    std::cout << "Diretorio de saida garantido: " << std::filesystem::absolute(outputDir).string() << "\n";
+    std::cout << "Diretorio de saida garantido: " << std::filesystem::absolute(outputDir).string() << "\n\n";
+
+    // 2. Menu Interativo via std::cin
+    std::cout << "================== CONFIGURACAO DOS CENARIOS ==================\n";
+    
+    // Cenário 1: Aleatório
+    int nRandom = 30;
+    std::cout << "1. Cenario Aleatorio:\n";
+    std::cout << "   Quantidade de cidades (padrao: 30): ";
+    if (!(std::cin >> nRandom) || nRandom <= 0) {
+        nRandom = 30;
+    }
+
+    // Cenário 2: Circular Padrão
+    int nCircular = 30;
+    double radius30 = 40.0;
+    std::cout << "\n2. Cenario Circular Padrao:\n";
+    std::cout << "   Quantidade de cidades (padrao: 30): ";
+    if (!(std::cin >> nCircular) || nCircular <= 0) {
+        nCircular = 30;
+    }
+    std::cout << "   Raio da circunferencia (padrao: 40.0): ";
+    if (!(std::cin >> radius30) || radius30 <= 0.0) {
+        radius30 = 40.0;
+    }
+
+    // Cenário 3: Circular Bónus
+    int nBonus = 100;
+    double radius100 = 100.0;
+    std::cout << "\n3. Cenario Circular Bonus (Alta Carga):\n";
+    std::cout << "   Quantidade de cidades (padrao: 100): ";
+    if (!(std::cin >> nBonus) || nBonus <= 0) {
+        nBonus = 100;
+    }
+    std::cout << "   Raio da circunferencia (padrao: 100.0): ";
+    if (!(std::cin >> radius100) || radius100 <= 0.0) {
+        radius100 = 100.0;
+    }
+    std::cout << "===============================================================\n";
 
     // ========================================================================
-    // EXPERIÊNCIA 1: Cenário Aleatório (N = 30 Cidades)
+    // EXPERIÊNCIA 1: Cenário Aleatório
     // ========================================================================
-    printSeparator("EXPERIENCIA 1: Cenario Aleatorio (N = 30 cidades)");
+    printSeparator("EXPERIENCIA 1: Cenario Aleatorio");
 
-    const int nRandom = 30;
     const unsigned randomScenarioSeed = 42;
-
     const auto randomCities = generateRandomPoints(nRandom, randomScenarioSeed);
     const auto randomDist = computeDistanceMatrix(randomCities);
 
+    // Exportar coordenadas para visualização
+    exportCitiesCSV((outputDir / "cidades_aleatorio.csv").string(), randomCities);
+
     GAConfig randomConfig;
-    randomConfig.populationSize  = 300;
+    randomConfig.populationSize  = (nRandom > 50) ? 500 : 300;
     randomConfig.tournamentSize  = 3;
     randomConfig.crossoverRate   = 0.85;
     randomConfig.mutationRate    = 0.05;
@@ -92,15 +140,14 @@ int main() {
     randomConfig.seed            = 12345;
     randomConfig.csvFilename     = (outputDir / "log_aleatorio.csv").string();
 
-    std::cout << "Configuracao do AG:\n"
+    std::cout << "Parametros do AG:\n"
               << "  Cidades:       " << nRandom << "\n"
               << "  Populacao:     " << randomConfig.populationSize << "\n"
-              << "  Torneio (k):   " << randomConfig.tournamentSize << "\n"
               << "  Cruzamento:    " << randomConfig.crossoverRate * 100 << "%\n"
               << "  Mutacao:       " << randomConfig.mutationRate * 100 << "%\n"
               << "  Elitismo:      " << randomConfig.eliteCount << "\n"
               << "  Max Geracoes:  " << randomConfig.maxGenerations << "\n"
-              << "  Estagnacao:    " << randomConfig.stagnationLimit << " geracoes\n"
+              << "  Estagnacao:    " << randomConfig.stagnationLimit << "\n"
               << "  Ficheiro CSV:  " << randomConfig.csvFilename << "\n\n"
               << "Evolucao:\n";
 
@@ -118,27 +165,24 @@ int main() {
               << "  Melhoria Obtida:       " << std::setprecision(2)
               << ((randomResult.initialBestDistance - randomResult.bestDistance)
                   / randomResult.initialBestDistance * 100.0) << "%\n"
-              << "  Fitness Final:         " << std::scientific
-              << std::setprecision(6) << randomResult.bestFitness << "\n"
               << "  Total Linhas no CSV:   " << countLinesInFile(randomConfig.csvFilename) << "\n\n"
               << "  Melhor Rota Encontrada:\n";
     printRoute(randomResult.bestRoute);
 
     // ========================================================================
-    // EXPERIÊNCIA 2: Cenário Circular Benchmark (N = 30 Cidades, Raio = 40)
+    // EXPERIÊNCIA 2: Cenário Circular Padrão
     // ========================================================================
-    printSeparator("EXPERIENCIA 2: Cenario Circular Benchmark (N = 30 cidades, Raio = 40)");
-
-    const int nCircular = 30;
-    const double radius30 = 40.0;
+    printSeparator("EXPERIENCIA 2: Cenario Circular Padrao");
 
     const auto circularCities = generateCircularPoints(nCircular, radius30);
     const auto circularDist = computeDistanceMatrix(circularCities);
 
+    exportCitiesCSV((outputDir / "cidades_circular.csv").string(), circularCities);
+
     const double theoreticalOptimal30 = 2.0 * nCircular * radius30 * std::sin(PI / nCircular);
 
     GAConfig circularConfig;
-    circularConfig.populationSize  = 300;
+    circularConfig.populationSize  = (nCircular > 50) ? 500 : 300;
     circularConfig.tournamentSize  = 3;
     circularConfig.crossoverRate   = 0.85;
     circularConfig.mutationRate    = 0.05;
@@ -148,12 +192,11 @@ int main() {
     circularConfig.seed            = 54321;
     circularConfig.csvFilename     = (outputDir / "log_circular.csv").string();
 
-    std::cout << "Configuracao do AG (Benchmark Circular 30):\n"
+    std::cout << "Parametros do AG:\n"
               << "  Cidades:               " << nCircular << "\n"
-              << "  Raio do Circulo:       " << radius30 << "\n"
+              << "  Raio:                  " << radius30 << "\n"
               << "  Dist. Otima Teorica:   " << std::fixed << std::setprecision(4)
               << theoreticalOptimal30 << "\n"
-              << "  Populacao:             " << circularConfig.populationSize << "\n"
               << "  Ficheiro CSV:          " << circularConfig.csvFilename << "\n\n"
               << "Evolucao:\n";
 
@@ -169,7 +212,6 @@ int main() {
               << "  Epocas Executadas:       " << circularResult.generationsRun << "\n"
               << "  Dist. Otima Teorica:     " << std::fixed << std::setprecision(4)
               << theoreticalOptimal30 << "\n"
-              << "  Melhor Dist. Inicial:    " << circularResult.initialBestDistance << "\n"
               << "  Melhor Dist. Final (AG): " << circularResult.bestDistance << "\n"
               << "  Diferenca p/ Otimo:      " << diff30 << "\n"
               << "  Erro Relativo:           " << std::setprecision(4)
@@ -180,17 +222,15 @@ int main() {
     printRoute(circularResult.bestRoute);
 
     // ========================================================================
-    // EXPERIÊNCIA 3 (BÓNUS): Cenário Circular de Alta Carga (N = 100, Raio = 100)
+    // EXPERIÊNCIA 3: Cenário Circular Bónus (Alta Carga)
     // ========================================================================
-    printSeparator("EXPERIENCIA 3 (BONUS): Alta Carga - Cenario Circular (N = 100, Raio = 100)");
-
-    const int nBonus = 100;
-    const double radius100 = 100.0;
+    printSeparator("EXPERIENCIA 3 (BONUS): Cenario Circular de Alta Carga");
 
     const auto bonusCities = generateCircularPoints(nBonus, radius100);
     const auto bonusDist = computeDistanceMatrix(bonusCities);
 
-    // Perímetro teórico para N=100, R=100: 2 * 100 * 100 * sin(pi / 100) ≈ 627.9052
+    exportCitiesCSV((outputDir / "cidades_bonus_100.csv").string(), bonusCities);
+
     const double theoreticalOptimal100 = 2.0 * nBonus * radius100 * std::sin(PI / nBonus);
 
     GAConfig bonusConfig;
@@ -204,19 +244,13 @@ int main() {
     bonusConfig.seed            = 999;
     bonusConfig.csvFilename     = (outputDir / "log_bonus_100.csv").string();
 
-    std::cout << "Configuracao do AG (Cenario Bonus N=100):\n"
-              << "  Cidades (Genes):       " << nBonus << " (Espaco de Busca: ~9.33e+157 rotas)\n"
-              << "  Raio do Circulo:       " << radius100 << "\n"
+    std::cout << "Parametros do AG:\n"
+              << "  Cidades:               " << nBonus << "\n"
+              << "  Raio:                  " << radius100 << "\n"
               << "  Dist. Otima Teorica:   " << std::fixed << std::setprecision(4)
               << theoreticalOptimal100 << "\n"
               << "  Populacao:             " << bonusConfig.populationSize << "\n"
-              << "  Torneio (k):           " << bonusConfig.tournamentSize << "\n"
-              << "  Cruzamento (OX):       " << bonusConfig.crossoverRate * 100 << "%\n"
-              << "  Mutacao (Inversao):    " << bonusConfig.mutationRate * 100 << "%\n"
-              << "  Elitismo:              " << bonusConfig.eliteCount << " individuos\n"
-              << "  Max Geracoes:          " << bonusConfig.maxGenerations << "\n"
-              << "  Limite de Estagnacao:  " << bonusConfig.stagnationLimit << " geracoes\n"
-              << "  Ficheiro de Saida:     " << bonusConfig.csvFilename << "\n\n"
+              << "  Ficheiro CSV:          " << bonusConfig.csvFilename << "\n\n"
               << "Evolucao:\n";
 
     const GAResult bonusResult = runGA(bonusCities, bonusDist, bonusConfig);
@@ -224,7 +258,7 @@ int main() {
     const double diff100 = bonusResult.bestDistance - theoreticalOptimal100;
     const double errorPerc100 = (diff100 / theoreticalOptimal100) * 100.0;
 
-    std::cout << "\nResultados Experiencia 3 (Bonus N=100):\n"
+    std::cout << "\nResultados Experiencia 3 (Bonus):\n"
               << "  ================ TELEMETRIA DE TEMPO ================\n"
               << "  Tempo Total de Execucao: " << std::fixed << std::setprecision(2)
               << bonusResult.executionTimeMs << " ms ("
@@ -236,15 +270,13 @@ int main() {
               << "  Epocas Executadas:       " << bonusResult.generationsRun << "\n"
               << "  Dist. Otima Teorica:     " << std::fixed << std::setprecision(4)
               << theoreticalOptimal100 << "\n"
-              << "  Melhor Dist. Inicial:    " << bonusResult.initialBestDistance << "\n"
               << "  Melhor Dist. Final (AG): " << bonusResult.bestDistance << "\n"
               << "  Diferenca p/ Otimo:      " << diff100 << "\n"
               << "  Erro Relativo:           " << std::setprecision(4) << errorPerc100 << "%\n"
-              << "  Proximidade do Otimo:    " << std::setprecision(2) << (100.0 - errorPerc100) << "%\n"
               << "  Total Linhas no CSV:     " << countLinesInFile(bonusConfig.csvFilename) << "\n\n"
               << "  Melhor Rota Encontrada:\n";
     printRoute(bonusResult.bestRoute);
 
-    printSeparator("FASE 4 CONCLUIDA COM SUCESSO: RESULTADOS GERADOS");
+    printSeparator("FASE 5: EXECUCAO CONCLUIDA COM SUCESSO!");
     return 0;
 }
