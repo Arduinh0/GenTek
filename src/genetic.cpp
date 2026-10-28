@@ -3,14 +3,33 @@
 #include "fitness.hpp"
 
 #include <algorithm>
-#include <iostream>
+#include <fstream>
 #include <iomanip>
+#include <iostream>
 #include <numeric>
+#include <sstream>
 #include <vector>
 
 // ============================================================================
-// genetic.cpp — Implementação dos Operadores Genéticos e Ciclo de Evolução
+// genetic.cpp — Implementação dos Operadores Genéticos, Telemetria e Ciclo
 // ============================================================================
+
+// ----------------------------------------------------------------------------
+// Formatação de rotas
+// ----------------------------------------------------------------------------
+std::string formatRoute(const Individual& route) {
+    if (route.empty()) {
+        return "";
+    }
+    std::ostringstream oss;
+    for (size_t i = 0; i < route.size(); ++i) {
+        if (i > 0) {
+            oss << '-';
+        }
+        oss << route[i];
+    }
+    return oss.str();
+}
 
 // ----------------------------------------------------------------------------
 // Função auxiliar: avalia um indivíduo e devolve um EvaluatedIndividual
@@ -156,7 +175,7 @@ void inversionMutation(Individual& individual, const double mutationRate,
 }
 
 // ----------------------------------------------------------------------------
-// 5. Ciclo de Evolução — runGA
+// 5. Ciclo de Evolução com Telemetria — runGA
 // ----------------------------------------------------------------------------
 GAResult runGA(const std::vector<Point>& cities,
                const DistMatrix& dist,
@@ -167,15 +186,61 @@ GAResult runGA(const std::vector<Point>& cities,
     // Inicializar RNG
     std::mt19937 rng(config.seed == 0 ? std::random_device{}() : config.seed);
 
+    // Preparar exportação CSV se configurada
+    std::ofstream csvFile;
+    if (!config.csvFilename.empty()) {
+        csvFile.open(config.csvFilename);
+        if (csvFile.is_open()) {
+            csvFile << "Epoca,MelhorDistancia,DistanciaMedia,MelhorRota\n";
+        } else {
+            std::cerr << "  [AVISO] Nao foi possivel abrir o ficheiro de log: "
+                      << config.csvFilename << "\n";
+        }
+    }
+
     // --- Inicialização da população ---
     auto population = initializePopulation(numCities, config.populationSize,
                                            dist, rng);
 
-    // Ordenar por distância (crescente) para identificar o melhor
+    // Ordenar por distância (crescente): population[0] é o melhor
     std::sort(population.begin(), population.end(),
               [](const EvaluatedIndividual& a, const EvaluatedIndividual& b) {
                   return a.distance < b.distance;
               });
+
+    // Estruturas de resultado e telemetria
+    std::vector<GenerationData> history;
+    history.reserve(config.maxGenerations + 1);
+
+    // Helper para registar telemetria de uma geração
+    auto logGeneration = [&](int epoch, const std::vector<EvaluatedIndividual>& pop) {
+        // Cálculo em O(P) da distância média através do cache
+        double sumDist = 0.0;
+        for (const auto& ind : pop) {
+            sumDist += ind.distance;
+        }
+        const double avgDist = sumDist / pop.size();
+        const double bestDist = pop[0].distance;
+
+        GenerationData data{epoch, bestDist, avgDist, pop[0].route};
+        history.push_back(data);
+
+        // Callback em memória (se configurado)
+        if (config.onGeneration) {
+            config.onGeneration(data);
+        }
+
+        // Streaming direto para CSV
+        if (csvFile.is_open()) {
+            csvFile << epoch << ","
+                    << std::fixed << std::setprecision(4) << bestDist << ","
+                    << avgDist << ","
+                    << formatRoute(pop[0].route) << "\n";
+        }
+    };
+
+    // Registar época 0 (população inicial)
+    logGeneration(0, population);
 
     // Melhor global
     EvaluatedIndividual bestEver = population[0];
@@ -184,15 +249,16 @@ GAResult runGA(const std::vector<Point>& cities,
     int generationsRun = 0;
     std::string stopReason = "MAX_GENERATIONS";
 
-    std::cout << "  Gen    0: melhor dist = " << std::fixed
-              << std::setprecision(4) << bestEver.distance << " (inicial)\n";
+    std::cout << "  Gen    0: melhor = " << std::fixed
+              << std::setprecision(4) << bestEver.distance
+              << " | media = " << history[0].avgDistance << " (inicial)\n";
 
     // --- Ciclo evolutivo ---
     for (int gen = 1; gen <= config.maxGenerations; ++gen) {
         std::vector<EvaluatedIndividual> newPopulation;
         newPopulation.reserve(config.populationSize);
 
-        // 1. Elitismo: copiar os melhores diretamente (população já ordenada)
+        // 1. Elitismo: copiar os melhores diretamente
         for (int e = 0; e < config.eliteCount && e < config.populationSize; ++e) {
             newPopulation.push_back(population[e]);
         }
@@ -237,7 +303,10 @@ GAResult runGA(const std::vector<Point>& cities,
                       return a.distance < b.distance;
                   });
 
-        // 4. Atualizar melhor global
+        // 4. Registar telemetria da geração
+        logGeneration(gen, population);
+
+        // 5. Atualizar melhor global
         const auto& currentBest = population[0];
         if (currentBest.distance < bestEver.distance) {
             bestEver = currentBest;
@@ -248,20 +317,25 @@ GAResult runGA(const std::vector<Point>& cities,
 
         generationsRun = gen;
 
-        // 5. Log a cada 100 gerações
+        // 6. Log no terminal a cada 100 gerações
         if (gen % 100 == 0) {
             std::cout << "  Gen " << std::setw(4) << gen
-                      << ": melhor dist = " << std::fixed << std::setprecision(4)
+                      << ": melhor = " << std::fixed << std::setprecision(4)
                       << bestEver.distance
+                      << " | media = " << history.back().avgDistance
                       << " | estagnacao = " << stagnationCounter << "/" 
                       << config.stagnationLimit << "\n";
         }
 
-        // 6. Critério de paragem por estagnação
+        // 7. Critério de paragem por estagnação
         if (stagnationCounter >= config.stagnationLimit) {
             stopReason = "STAGNATION";
             break;
         }
+    }
+
+    if (csvFile.is_open()) {
+        csvFile.close();
     }
 
     return GAResult{
@@ -270,6 +344,7 @@ GAResult runGA(const std::vector<Point>& cities,
         bestEver.fitValue,
         generationsRun,
         initialBestDistance,
-        stopReason
+        stopReason,
+        std::move(history)
     };
 }
