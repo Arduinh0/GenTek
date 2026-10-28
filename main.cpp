@@ -5,6 +5,7 @@
 #include "genetic.hpp"
 
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -13,10 +14,39 @@
 #include <string>
 
 // ============================================================================
-// main.cpp — Fase 5: Menu Interativo, Execucao e Exportacao de Telemetria
+// main.cpp — Fase 5: Menu Interativo, Pipeline Autônoma e Exportação
 // ============================================================================
 
 static constexpr double PI = 3.14159265358979323846;
+
+/// Localiza a raiz do projeto (onde residem CMakeLists.txt e gerar_graficos.py),
+/// independentemente de o executável ser chamado a partir da pasta 'build' ou da raiz.
+std::filesystem::path findProjectRoot(const char* argv0 = nullptr) {
+    // 1. Tentar a partir do diretório de trabalho atual subindo a árvore
+    std::filesystem::path p = std::filesystem::current_path();
+    for (int i = 0; i < 5; ++i) {
+        if (std::filesystem::exists(p / "CMakeLists.txt") && 
+            (std::filesystem::exists(p / "src") || std::filesystem::exists(p / "gerar_graficos.py"))) {
+            return p;
+        }
+        if (!p.has_parent_path() || p == p.parent_path()) break;
+        p = p.parent_path();
+    }
+    // 2. Tentar a partir da localização do executável (argv[0])
+    if (argv0) {
+        std::error_code ec;
+        std::filesystem::path execP = std::filesystem::absolute(argv0, ec).parent_path();
+        for (int i = 0; i < 5; ++i) {
+            if (std::filesystem::exists(execP / "CMakeLists.txt") && 
+                (std::filesystem::exists(execP / "src") || std::filesystem::exists(execP / "gerar_graficos.py"))) {
+                return execP;
+            }
+            if (!execP.has_parent_path() || execP == execP.parent_path()) break;
+            execP = execP.parent_path();
+        }
+    }
+    return std::filesystem::current_path();
+}
 
 /// Imprime uma rota formatada (com resumo caso tenha mais de 35 cidades).
 void printRoute(const Individual& route) {
@@ -71,15 +101,20 @@ void exportCitiesCSV(const std::string& filename, const std::vector<Point>& citi
     }
 }
 
-int main() {
-    printSeparator("ALGORITMO GENETICO - TSP 2D (FASE 5: INTERATIVO & PIPELINE)");
+int main(int argc, char* argv[]) {
+    // 1. Garantir que o diretório de trabalho é sempre a raiz do projeto
+    const std::filesystem::path rootDir = findProjectRoot(argc > 0 ? argv[0] : nullptr);
+    std::filesystem::current_path(rootDir);
 
-    // 1. Organização Dinâmica de Diretórios via <filesystem>
+    printSeparator("ALGORITMO GENETICO - TSP 2D (FASE 5: PIPELINE 100% AUTONOMA)");
+
+    // 2. Garantir diretório 'resultados' na raiz do projeto
     const std::filesystem::path outputDir = "resultados";
     std::filesystem::create_directories(outputDir);
-    std::cout << "Diretorio de saida garantido: " << std::filesystem::absolute(outputDir).string() << "\n\n";
+    std::cout << "Raiz do projeto identificada: " << std::filesystem::current_path().string() << "\n";
+    std::cout << "Diretorio de resultados:      " << std::filesystem::absolute(outputDir).string() << "\n\n";
 
-    // 2. Menu Interativo via std::cin
+    // 3. Menu Interativo via std::cin
     std::cout << "================== CONFIGURACAO DOS CENARIOS ==================\n";
     
     // Cenário 1: Aleatório
@@ -120,13 +155,12 @@ int main() {
     // ========================================================================
     // EXPERIÊNCIA 1: Cenário Aleatório
     // ========================================================================
-    printSeparator("EXPERIENCIA 1: Cenario Aleatorio");
+    printSeparator("EXPERIENCIA 1: Cenario Aleatorio (N = " + std::to_string(nRandom) + ")");
 
     const unsigned randomScenarioSeed = 42;
     const auto randomCities = generateRandomPoints(nRandom, randomScenarioSeed);
     const auto randomDist = computeDistanceMatrix(randomCities);
 
-    // Exportar coordenadas para visualização
     exportCitiesCSV((outputDir / "cidades_aleatorio.csv").string(), randomCities);
 
     GAConfig randomConfig;
@@ -172,7 +206,8 @@ int main() {
     // ========================================================================
     // EXPERIÊNCIA 2: Cenário Circular Padrão
     // ========================================================================
-    printSeparator("EXPERIENCIA 2: Cenario Circular Padrao");
+    printSeparator("EXPERIENCIA 2: Cenario Circular (N = " + std::to_string(nCircular) +
+                   ", Raio = " + std::to_string(static_cast<int>(radius30)) + ")");
 
     const auto circularCities = generateCircularPoints(nCircular, radius30);
     const auto circularDist = computeDistanceMatrix(circularCities);
@@ -197,6 +232,7 @@ int main() {
               << "  Raio:                  " << radius30 << "\n"
               << "  Dist. Otima Teorica:   " << std::fixed << std::setprecision(4)
               << theoreticalOptimal30 << "\n"
+              << "  Populacao:             " << circularConfig.populationSize << "\n"
               << "  Ficheiro CSV:          " << circularConfig.csvFilename << "\n\n"
               << "Evolucao:\n";
 
@@ -224,7 +260,8 @@ int main() {
     // ========================================================================
     // EXPERIÊNCIA 3: Cenário Circular Bónus (Alta Carga)
     // ========================================================================
-    printSeparator("EXPERIENCIA 3 (BONUS): Cenario Circular de Alta Carga");
+    printSeparator("EXPERIENCIA 3 (BONUS): Cenario Circular de Alta Carga (N = " +
+                   std::to_string(nBonus) + ", Raio = " + std::to_string(static_cast<int>(radius100)) + ")");
 
     const auto bonusCities = generateCircularPoints(nBonus, radius100);
     const auto bonusDist = computeDistanceMatrix(bonusCities);
@@ -277,6 +314,21 @@ int main() {
               << "  Melhor Rota Encontrada:\n";
     printRoute(bonusResult.bestRoute);
 
-    printSeparator("FASE 5: EXECUCAO CONCLUIDA COM SUCESSO!");
+    // ========================================================================
+    // 4. AUTOMAÇÃO: CHAMADA DO SCRIPT PYTHON
+    // ========================================================================
+    printSeparator("AUTOMACAO: GERACAO DE GRAFICOS (PYTHON)");
+    std::cout << "Executando gerar_graficos.py automaticamente na raiz do projeto...\n\n";
+
+    // Executa no Windows e Unix com fallback
+    const int pyStatus = std::system("python gerar_graficos.py || python3 gerar_graficos.py");
+    if (pyStatus == 0) {
+        std::cout << "\n[OK] Pipeline completa finalizada com sucesso! Graficos atualizados em 'graficos/'.\n";
+    } else {
+        std::cerr << "\n[AVISO] O script Python retornou codigo: " << pyStatus
+                  << ". Certifique-se de que python com pandas e matplotlib estao instalados.\n";
+    }
+
+    printSeparator("EXECUCAO CONCLUIDA COM SUCESSO!");
     return 0;
 }

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-gerar_graficos.py — Fase 5: Visualização dos Dados e Relatórios Gráficos (TSP GA)
+gerar_graficos.py — Visualização dos Dados e Relatórios Gráficos (TSP GA)
 
 Gera:
-1. Curvas de Convergência (Melhor Distância e Distância Média vs Época)
-2. Traçados 2D dos Percursos Encontrados (Cenário Aleatório, Circular e Bónus N=100)
-3. Painéis Comparativos Completos (300 DPI)
+1. Curvas de Convergência Dinâmicas (Melhor Distância e Média vs Época)
+2. Traçados 2D dos Percursos Encontrados com N dinâmico
+3. Painel Comparativo Integrado (300 DPI)
 
-Saída: pasta graficos/
+Saída: pasta graficos/ na raiz do projeto
 """
 
 import os
@@ -16,7 +16,7 @@ import math
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# Configuração global de estilo para artigos e relatórios acadêmicos
+# Configuração global de estilo
 plt.rcParams['font.family'] = 'sans-serif'
 plt.rcParams['font.size'] = 11
 plt.rcParams['axes.titlesize'] = 13
@@ -26,8 +26,10 @@ plt.rcParams['ytick.labelsize'] = 10
 plt.rcParams['legend.fontsize'] = 10
 plt.rcParams['figure.titlesize'] = 14
 
-OUTPUT_DIR = "graficos"
-RESULTS_DIR = "resultados"
+# Localização robusta em relação ao diretório deste script (raiz do projeto)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+RESULTS_DIR = os.path.join(BASE_DIR, "resultados")
+OUTPUT_DIR = os.path.join(BASE_DIR, "graficos")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 def load_cities_from_csv(csv_path):
@@ -36,6 +38,15 @@ def load_cities_from_csv(csv_path):
         df = pd.read_csv(csv_path)
         return {int(row['Cidade']): (float(row['X']), float(row['Y'])) for _, row in df.iterrows()}
     return None
+
+def get_n_cities_from_log(csv_path):
+    """Lê dinamicamente o número de cidades contando os nós da rota final no CSV."""
+    if os.path.exists(csv_path):
+        df = pd.read_csv(csv_path)
+        if not df.empty and 'MelhorRota' in df.columns:
+            last_route = str(df['MelhorRota'].iloc[-1])
+            return len(last_route.split('-'))
+    return 30
 
 def compute_circular_coords(n_cities, radius, center=(50.0, 50.0)):
     """Gera analiticamente as coordenadas do círculo conforme implementado em C++."""
@@ -48,8 +59,15 @@ def compute_circular_coords(n_cities, radius, center=(50.0, 50.0)):
         coords[i] = (x, y)
     return coords
 
+def extract_radius_from_coords(coords, center=(50.0, 50.0)):
+    """Extrai o raio utilizado a partir das coordenadas dos pontos."""
+    if coords and len(coords) > 0:
+        x0, y0 = coords[0]
+        return math.hypot(x0 - center[0], y0 - center[1])
+    return 40.0
+
 # -----------------------------------------------------------------------------
-# 1. Plot de Curvas de Convergência Individuais
+# 1. Curvas de Convergência Individuais com Títulos Dinâmicos
 # -----------------------------------------------------------------------------
 def plot_convergence(log_file, title, output_name, theoretical_opt=None):
     csv_path = os.path.join(RESULTS_DIR, log_file)
@@ -58,7 +76,6 @@ def plot_convergence(log_file, title, output_name, theoretical_opt=None):
         return
 
     df = pd.read_csv(csv_path)
-    
     fig, ax = plt.subplots(figsize=(9, 5.5), dpi=300)
 
     # Curva da distância média
@@ -69,7 +86,7 @@ def plot_convergence(log_file, title, output_name, theoretical_opt=None):
     ax.plot(df['Epoca'], df['MelhorDistancia'], label='Melhor Distância (Elitismo)',
             color='#1F77B4', linewidth=2.2)
 
-    # Linha do ótimo teórico (se houver)
+    # Linha do ótimo teórico
     if theoretical_opt is not None:
         ax.axhline(y=theoretical_opt, color='#2CA02C', linestyle=':', linewidth=2.0,
                    label=f'Ótimo Teórico ({theoretical_opt:.2f})')
@@ -96,7 +113,7 @@ def plot_convergence(log_file, title, output_name, theoretical_opt=None):
     print(f"  [OK] Grafico salvo: {out_path}")
 
 # -----------------------------------------------------------------------------
-# 2. Plot dos Traçados 2D dos Percursos (Rotas)
+# 2. Plot dos Traçados 2D dos Percursos com N e R Dinâmicos
 # -----------------------------------------------------------------------------
 def plot_route(log_file, coords, title, output_name, radius=None, center=(50.0, 50.0)):
     csv_path = os.path.join(RESULTS_DIR, log_file)
@@ -109,6 +126,8 @@ def plot_route(log_file, coords, title, output_name, radius=None, center=(50.0, 
     final_dist = float(last_row['MelhorDistancia'])
     
     route_indices = [int(x) for x in route_str.split('-')]
+    n_real = len(route_indices)
+
     # Fechar ciclo hamiltoniano
     route_indices.append(route_indices[0])
 
@@ -117,10 +136,10 @@ def plot_route(log_file, coords, title, output_name, radius=None, center=(50.0, 
 
     fig, ax = plt.subplots(figsize=(7.5, 7.5), dpi=300)
 
-    # Circunferência teórica de referência (se for cenário circular)
+    # Circunferência teórica de referência
     if radius is not None:
         circle = plt.Circle(center, radius, color='#BDC3C7', fill=False,
-                            linestyle=':', linewidth=1.5, label=f'Circunferência (R={radius})')
+                            linestyle=':', linewidth=1.5, label=f'Circunferência (R={radius:.1f})')
         ax.add_patch(circle)
 
     # Traçado das arestas do percurso
@@ -131,7 +150,7 @@ def plot_route(log_file, coords, title, output_name, radius=None, center=(50.0, 
     city_xs = [coords[i][0] for i in range(len(coords))]
     city_ys = [coords[i][1] for i in range(len(coords))]
     ax.scatter(city_xs, city_ys, color='#C0392B', s=45, zorder=3, edgecolors='white',
-               linewidth=0.8, label=f'Cidades (N={len(coords)})')
+               linewidth=0.8, label=f'Cidades (N = {n_real})')
 
     # Destaque da cidade de origem
     ax.scatter([xs[0]], [ys[0]], color='#27AE60', s=130, marker='*', zorder=4,
@@ -151,23 +170,17 @@ def plot_route(log_file, coords, title, output_name, radius=None, center=(50.0, 
     print(f"  [OK] Grafico de rota salvo: {out_path}")
 
 # -----------------------------------------------------------------------------
-# 3. Painel Comparativo de Convergência (3 Subplots)
+# 3. Painel Comparativo Integrado com N e R Dinâmicos
 # -----------------------------------------------------------------------------
-def plot_comparative_convergence():
-    logs = [
-        ("log_aleatorio.csv", "Cenário Aleatório (N = 30)", None),
-        ("log_circular.csv", "Cenário Circular Benchmark (N = 30, R = 40)", 250.8683),
-        ("log_bonus_100.csv", "Cenário Bónus Alta Carga (N = 100, R = 100)", 628.2152)
-    ]
+def plot_comparative_convergence(info_list):
+    fig, axes = plt.subplots(1, len(info_list), figsize=(6.0 * len(info_list), 5.2), dpi=300)
 
-    fig, axes = plt.subplots(1, 3, figsize=(18, 5.2), dpi=300)
-
-    for i, (log_file, title, opt) in enumerate(logs):
+    for i, (log_file, title, opt) in enumerate(info_list):
         csv_path = os.path.join(RESULTS_DIR, log_file)
         if not os.path.exists(csv_path):
             continue
         df = pd.read_csv(csv_path)
-        ax = axes[i]
+        ax = axes[i] if len(info_list) > 1 else axes
 
         ax.plot(df['Epoca'], df['DistanciaMedia'], label='Média População',
                 color='#E67E22', linestyle='--', linewidth=1.5, alpha=0.8)
@@ -196,51 +209,73 @@ def plot_comparative_convergence():
 # -----------------------------------------------------------------------------
 def main():
     print("=" * 65)
-    print("GERADOR DE GRAFICOS TSP - ALGORITMO GENETICO (FASE 5)")
+    print("GERADOR DE GRAFICOS TSP - ALGORITMO GENETICO (FASE 5 DINAMICA)")
     print("=" * 65)
 
-    # 1. Curvas de Convergência
-    print("\n--- Gerando Curvas de Convergencia ---")
+    # 1. Carregar coordenadas e determinar N e R dinamicamente
+    # Cenário 1: Aleatório
+    coords_rand = load_cities_from_csv(os.path.join(RESULTS_DIR, "cidades_aleatorio.csv"))
+    n_rand = len(coords_rand) if coords_rand else get_n_cities_from_log(os.path.join(RESULTS_DIR, "log_aleatorio.csv"))
+
+    # Cenário 2: Circular Padrão
+    coords_circ = load_cities_from_csv(os.path.join(RESULTS_DIR, "cidades_circular.csv"))
+    n_circ = len(coords_circ) if coords_circ else get_n_cities_from_log(os.path.join(RESULTS_DIR, "log_circular.csv"))
+    r_circ = extract_radius_from_coords(coords_circ) if coords_circ else 40.0
+    if not coords_circ:
+        coords_circ = compute_circular_coords(n_circ, r_circ)
+    opt_circ = 2.0 * n_circ * r_circ * math.sin(math.pi / n_circ)
+
+    # Cenário 3: Circular Bónus
+    coords_bonus = load_cities_from_csv(os.path.join(RESULTS_DIR, "cidades_bonus_100.csv"))
+    n_bonus = len(coords_bonus) if coords_bonus else get_n_cities_from_log(os.path.join(RESULTS_DIR, "log_bonus_100.csv"))
+    r_bonus = extract_radius_from_coords(coords_bonus) if coords_bonus else 100.0
+    if not coords_bonus:
+        coords_bonus = compute_circular_coords(n_bonus, r_bonus)
+    opt_bonus = 2.0 * n_bonus * r_bonus * math.sin(math.pi / n_bonus)
+
+    print(f"Dimensoes detectadas nos CSVs:")
+    print(f"  - Cenario Aleatorio:      N = {n_rand}")
+    print(f"  - Cenario Circular:       N = {n_circ}, Raio = {r_circ:.1f} (Otimo: {opt_circ:.2f})")
+    print(f"  - Cenario Bonus:          N = {n_bonus}, Raio = {r_bonus:.1f} (Otimo: {opt_bonus:.2f})\n")
+
+    # 2. Curvas de Convergência com Títulos Dinâmicos
+    print("--- Gerando Curvas de Convergencia Dinamicas ---")
     plot_convergence("log_aleatorio.csv",
-                     "Convergência do AG: Cenário Aleatório (N = 30)",
+                     f"Convergência do AG: Cenário Aleatório (N = {n_rand})",
                      "convergencia_aleatorio.png")
 
     plot_convergence("log_circular.csv",
-                     "Convergência do AG: Cenário Circular Benchmark (N = 30, R = 40)",
+                     f"Convergência do AG: Cenário Circular Benchmark (N = {n_circ}, R = {r_circ:.1f})",
                      "convergencia_circular.png",
-                     theoretical_opt=250.8683)
+                     theoretical_opt=opt_circ)
 
     plot_convergence("log_bonus_100.csv",
-                     "Convergência do AG: Cenário Bónus Alta Carga (N = 100, R = 100)",
+                     f"Convergência do AG: Cenário Bónus Alta Carga (N = {n_bonus}, R = {r_bonus:.1f})",
                      "convergencia_bonus_100.png",
-                     theoretical_opt=628.2152)
+                     theoretical_opt=opt_bonus)
 
-    plot_comparative_convergence()
+    # Painel comparativo
+    comparative_info = [
+        ("log_aleatorio.csv", f"Cenário Aleatório (N = {n_rand})", None),
+        ("log_circular.csv", f"Cenário Circular (N = {n_circ}, R = {r_circ:.1f})", opt_circ),
+        ("log_bonus_100.csv", f"Cenário Bónus (N = {n_bonus}, R = {r_bonus:.1f})", opt_bonus)
+    ]
+    plot_comparative_convergence(comparative_info)
 
-    # 2. Rotas 2D
+    # 3. Visualizações 2D das Rotas
     print("\n--- Gerando Visualizacoes 2D das Rotas ---")
-    # Rota Aleatória
-    coords_rand = load_cities_from_csv(os.path.join(RESULTS_DIR, "cidades_aleatorio.csv"))
     if coords_rand:
         plot_route("log_aleatorio.csv", coords_rand,
-                   "Melhor Percurso Encontrado: Cenário Aleatório (N = 30)",
+                   f"Melhor Percurso Encontrado: Cenário Aleatório (N = {n_rand})",
                    "rota_aleatorio.png")
 
-    # Rota Circular (N = 30, R = 40)
-    coords_circ = load_cities_from_csv(os.path.join(RESULTS_DIR, "cidades_circular.csv"))
-    if not coords_circ:
-        coords_circ = compute_circular_coords(30, 40.0)
     plot_route("log_circular.csv", coords_circ,
-               "Melhor Percurso Encontrado: Cenário Circular (N = 30, R = 40)",
-               "rota_circular_30.png", radius=40.0)
+               f"Melhor Percurso Encontrado: Cenário Circular (N = {n_circ}, R = {r_circ:.1f})",
+               "rota_circular_30.png", radius=r_circ)
 
-    # Rota Bónus (N = 100, R = 100)
-    coords_bonus = load_cities_from_csv(os.path.join(RESULTS_DIR, "cidades_bonus_100.csv"))
-    if not coords_bonus:
-        coords_bonus = compute_circular_coords(100, 100.0)
     plot_route("log_bonus_100.csv", coords_bonus,
-               "Melhor Percurso Encontrado: Cenário Bónus Alta Carga (N = 100, R = 100)",
-               "rota_bonus_100.png", radius=100.0)
+               f"Melhor Percurso Encontrado: Cenário Bónus Alta Carga (N = {n_bonus}, R = {r_bonus:.1f})",
+               "rota_bonus_100.png", radius=r_bonus)
 
     print("\n" + "=" * 65)
     print("TODOS OS GRAFICOS GERADOS COM SUCESSO EM:", os.path.abspath(OUTPUT_DIR))
