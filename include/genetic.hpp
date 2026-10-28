@@ -50,7 +50,7 @@ struct GAConfig {
     int    stagnationLimit  = 250;    ///< Critério de paragem: gerações sem melhoria
     unsigned seed           = 0;      ///< Seed do RNG (0 = aleatória via random_device)
 
-    // Opções de Telemetria (Fase 3)
+    // Opções de Telemetria
     std::string csvFilename = "";     ///< Se preenchido, exporta CSV (Epoca,MelhorDistancia,DistanciaMedia,MelhorRota)
     std::function<void(const GenerationData&)> onGeneration = nullptr; ///< Callback por geração
 };
@@ -64,6 +64,7 @@ struct GAResult {
     double                      initialBestDistance;  ///< Melhor distância na população inicial
     std::string                 stopReason;           ///< "MAX_GENERATIONS" ou "STAGNATION"
     std::vector<GenerationData> history;              ///< Histórico completo de telemetria época a época
+    double                      executionTimeMs;      ///< Tempo total de execução do GA em milissegundos (std::chrono)
 };
 
 // ----------------------------------------------------------------------------
@@ -99,7 +100,7 @@ void inversionMutation(Individual& individual, double mutationRate,
 // Ciclo de Evolução
 // ----------------------------------------------------------------------------
 
-/// Executa o Algoritmo Genético completo com telemetria (exportação CSV e callbacks).
+/// Executa o Algoritmo Genético completo com telemetria (exportação CSV, callbacks e medição de tempo).
 GAResult runGA(const std::vector<Point>& cities,
                const DistMatrix& dist,
                const GAConfig& config);

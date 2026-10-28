@@ -3,6 +3,8 @@
 #include "fitness.hpp"
 
 #include <algorithm>
+#include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -175,21 +177,28 @@ void inversionMutation(Individual& individual, const double mutationRate,
 }
 
 // ----------------------------------------------------------------------------
-// 5. Ciclo de Evolução com Telemetria — runGA
+// 5. Ciclo de Evolução com Telemetria e Medição de Tempo — runGA
 // ----------------------------------------------------------------------------
 GAResult runGA(const std::vector<Point>& cities,
                const DistMatrix& dist,
                const GAConfig& config) {
+
+    // Início da medição de alta precisão
+    const auto startTime = std::chrono::high_resolution_clock::now();
 
     const int numCities = static_cast<int>(cities.size());
 
     // Inicializar RNG
     std::mt19937 rng(config.seed == 0 ? std::random_device{}() : config.seed);
 
-    // Preparar exportação CSV se configurada
+    // Preparar exportação CSV com sobrescrita segura (std::ios::trunc)
     std::ofstream csvFile;
     if (!config.csvFilename.empty()) {
-        csvFile.open(config.csvFilename);
+        std::filesystem::path filePath(config.csvFilename);
+        if (filePath.has_parent_path()) {
+            std::filesystem::create_directories(filePath.parent_path());
+        }
+        csvFile.open(config.csvFilename, std::ios::out | std::ios::trunc);
         if (csvFile.is_open()) {
             csvFile << "Epoca,MelhorDistancia,DistanciaMedia,MelhorRota\n";
         } else {
@@ -252,6 +261,9 @@ GAResult runGA(const std::vector<Point>& cities,
     std::cout << "  Gen    0: melhor = " << std::fixed
               << std::setprecision(4) << bestEver.distance
               << " | media = " << history[0].avgDistance << " (inicial)\n";
+
+    // Intervalo de log dinâmico: se maxGenerations > 1500, log a cada 200 épocas
+    const int logInterval = (config.maxGenerations > 1500) ? 200 : 100;
 
     // --- Ciclo evolutivo ---
     for (int gen = 1; gen <= config.maxGenerations; ++gen) {
@@ -317,8 +329,8 @@ GAResult runGA(const std::vector<Point>& cities,
 
         generationsRun = gen;
 
-        // 6. Log no terminal a cada 100 gerações
-        if (gen % 100 == 0) {
+        // 6. Log no terminal
+        if (gen % logInterval == 0) {
             std::cout << "  Gen " << std::setw(4) << gen
                       << ": melhor = " << std::fixed << std::setprecision(4)
                       << bestEver.distance
@@ -338,6 +350,10 @@ GAResult runGA(const std::vector<Point>& cities,
         csvFile.close();
     }
 
+    // Fim da medição de tempo
+    const auto endTime = std::chrono::high_resolution_clock::now();
+    const std::chrono::duration<double, std::milli> elapsedMs = endTime - startTime;
+
     return GAResult{
         bestEver.route,
         bestEver.distance,
@@ -345,6 +361,7 @@ GAResult runGA(const std::vector<Point>& cities,
         generationsRun,
         initialBestDistance,
         stopReason,
-        std::move(history)
+        std::move(history),
+        elapsedMs.count()
     };
 }

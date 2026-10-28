@@ -5,6 +5,7 @@
 #include "genetic.hpp"
 
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -12,26 +13,41 @@
 #include <string>
 
 // ============================================================================
-// main.cpp — Fase 3: Experiencias Formais e Exportacao de Telemetria (CSV)
+// main.cpp — Fase 4: Cenário Bónus (Alta Volumetria), Telemetria de Tempo
+//                     e Organização de Ficheiros com <filesystem>
 // ============================================================================
 
 static constexpr double PI = 3.14159265358979323846;
 
-/// Imprime uma rota formatada.
+/// Imprime uma rota formatada (com resumo caso tenha mais de 30 cidades).
 void printRoute(const Individual& route) {
+    const int n = static_cast<int>(route.size());
     std::cout << "  [";
-    for (int i = 0; i < static_cast<int>(route.size()); ++i) {
-        if (i > 0) std::cout << " -> ";
-        std::cout << route[i];
+    if (n <= 35) {
+        for (int i = 0; i < n; ++i) {
+            if (i > 0) std::cout << " -> ";
+            std::cout << route[i];
+        }
+        std::cout << " -> " << route[0] << "]\n";
+    } else {
+        // Exibição compacta para rotas longas (ex: N=100)
+        for (int i = 0; i < 10; ++i) {
+            if (i > 0) std::cout << " -> ";
+            std::cout << route[i];
+        }
+        std::cout << " -> ... (" << (n - 20) << " cidades intermediarias) ...";
+        for (int i = n - 10; i < n; ++i) {
+            std::cout << " -> " << route[i];
+        }
+        std::cout << " -> " << route[0] << "]\n";
     }
-    std::cout << " -> " << route[0] << "]\n";
 }
 
 /// Separador visual entre seções.
 void printSeparator(const std::string& title) {
-    std::cout << "\n" << std::string(65, '=') << "\n"
+    std::cout << "\n" << std::string(70, '=') << "\n"
               << title << "\n"
-              << std::string(65, '=') << "\n\n";
+              << std::string(70, '=') << "\n\n";
 }
 
 /// Conta o número de linhas num ficheiro para confirmação do log.
@@ -47,7 +63,12 @@ int countLinesInFile(const std::string& filename) {
 }
 
 int main() {
-    printSeparator("FASE 3: EXECUCAO DE EXPERIENCIAS E EXPORTACAO DE LOGS");
+    printSeparator("FASE 4: ALTA VOLUMETRIA, TELEMETRIA DE TEMPO E ORGANIZACAO");
+
+    // 1. Organização Dinâmica de Diretórios via <filesystem>
+    const std::filesystem::path outputDir = "resultados";
+    std::filesystem::create_directories(outputDir);
+    std::cout << "Diretorio de saida garantido: " << std::filesystem::absolute(outputDir).string() << "\n";
 
     // ========================================================================
     // EXPERIÊNCIA 1: Cenário Aleatório (N = 30 Cidades)
@@ -69,7 +90,7 @@ int main() {
     randomConfig.maxGenerations  = 2000;
     randomConfig.stagnationLimit = 400;
     randomConfig.seed            = 12345;
-    randomConfig.csvFilename     = "log_aleatorio.csv";
+    randomConfig.csvFilename     = (outputDir / "log_aleatorio.csv").string();
 
     std::cout << "Configuracao do AG:\n"
               << "  Cidades:       " << nRandom << "\n"
@@ -86,6 +107,9 @@ int main() {
     const GAResult randomResult = runGA(randomCities, randomDist, randomConfig);
 
     std::cout << "\nResultados Experiencia 1:\n"
+              << "  Tempo de Execucao:     " << std::fixed << std::setprecision(2)
+              << randomResult.executionTimeMs << " ms ("
+              << std::setprecision(4) << (randomResult.executionTimeMs / 1000.0) << " s)\n"
               << "  Razao de Paragem:      " << randomResult.stopReason << "\n"
               << "  Epocas Executadas:     " << randomResult.generationsRun << "\n"
               << "  Melhor Dist. Inicial:  " << std::fixed << std::setprecision(4)
@@ -96,24 +120,22 @@ int main() {
                   / randomResult.initialBestDistance * 100.0) << "%\n"
               << "  Fitness Final:         " << std::scientific
               << std::setprecision(6) << randomResult.bestFitness << "\n"
-              << "  Total Linhas no CSV:   " << countLinesInFile(randomConfig.csvFilename)
-              << " (cabecalho + geracoes)\n\n"
+              << "  Total Linhas no CSV:   " << countLinesInFile(randomConfig.csvFilename) << "\n\n"
               << "  Melhor Rota Encontrada:\n";
     printRoute(randomResult.bestRoute);
 
     // ========================================================================
     // EXPERIÊNCIA 2: Cenário Circular Benchmark (N = 30 Cidades, Raio = 40)
     // ========================================================================
-    printSeparator("EXPERIENCIA 2: Cenario Circular Benchmark (N = 30 cidades)");
+    printSeparator("EXPERIENCIA 2: Cenario Circular Benchmark (N = 30 cidades, Raio = 40)");
 
     const int nCircular = 30;
-    const double radius = 40.0;
+    const double radius30 = 40.0;
 
-    const auto circularCities = generateCircularPoints(nCircular, radius);
+    const auto circularCities = generateCircularPoints(nCircular, radius30);
     const auto circularDist = computeDistanceMatrix(circularCities);
 
-    // Perímetro teórico ótimo = 2 * N * r * sin(pi / N)
-    const double theoreticalOptimal = 2.0 * nCircular * radius * std::sin(PI / nCircular);
+    const double theoreticalOptimal30 = 2.0 * nCircular * radius30 * std::sin(PI / nCircular);
 
     GAConfig circularConfig;
     circularConfig.populationSize  = 300;
@@ -124,39 +146,105 @@ int main() {
     circularConfig.maxGenerations  = 2000;
     circularConfig.stagnationLimit = 400;
     circularConfig.seed            = 54321;
-    circularConfig.csvFilename     = "log_circular.csv";
+    circularConfig.csvFilename     = (outputDir / "log_circular.csv").string();
 
-    std::cout << "Configuracao do AG (Benchmark Circular):\n"
+    std::cout << "Configuracao do AG (Benchmark Circular 30):\n"
               << "  Cidades:               " << nCircular << "\n"
-              << "  Raio do Circulo:       " << radius << "\n"
+              << "  Raio do Circulo:       " << radius30 << "\n"
               << "  Dist. Otima Teorica:   " << std::fixed << std::setprecision(4)
-              << theoreticalOptimal << "\n"
+              << theoreticalOptimal30 << "\n"
               << "  Populacao:             " << circularConfig.populationSize << "\n"
-              << "  Max Geracoes:          " << circularConfig.maxGenerations << "\n"
-              << "  Estagnacao:            " << circularConfig.stagnationLimit << "\n"
               << "  Ficheiro CSV:          " << circularConfig.csvFilename << "\n\n"
               << "Evolucao:\n";
 
     const GAResult circularResult = runGA(circularCities, circularDist, circularConfig);
 
-    const double diffFromOptimal = circularResult.bestDistance - theoreticalOptimal;
-    const double errorPercentage = (diffFromOptimal / theoreticalOptimal) * 100.0;
+    const double diff30 = circularResult.bestDistance - theoreticalOptimal30;
 
     std::cout << "\nResultados Experiencia 2:\n"
+              << "  Tempo de Execucao:       " << std::fixed << std::setprecision(2)
+              << circularResult.executionTimeMs << " ms ("
+              << std::setprecision(4) << (circularResult.executionTimeMs / 1000.0) << " s)\n"
               << "  Razao de Paragem:        " << circularResult.stopReason << "\n"
               << "  Epocas Executadas:       " << circularResult.generationsRun << "\n"
               << "  Dist. Otima Teorica:     " << std::fixed << std::setprecision(4)
-              << theoreticalOptimal << "\n"
+              << theoreticalOptimal30 << "\n"
               << "  Melhor Dist. Inicial:    " << circularResult.initialBestDistance << "\n"
               << "  Melhor Dist. Final (AG): " << circularResult.bestDistance << "\n"
-              << "  Diferenca p/ Otimo:      " << diffFromOptimal << "\n"
-              << "  Erro Relativo:           " << std::setprecision(4) << errorPercentage << "%\n"
-              << "  Convergiu para o Otimo:  " << (std::abs(diffFromOptimal) < 1e-4 ? "SIM (100% EXATO)" : "MUITO PROXIMO") << "\n"
-              << "  Total Linhas no CSV:     " << countLinesInFile(circularConfig.csvFilename)
-              << " (cabecalho + geracoes)\n\n"
+              << "  Diferenca p/ Otimo:      " << diff30 << "\n"
+              << "  Erro Relativo:           " << std::setprecision(4)
+              << ((diff30 / theoreticalOptimal30) * 100.0) << "%\n"
+              << "  Convergiu para o Otimo:  " << (std::abs(diff30) < 1e-4 ? "SIM (100% EXATO)" : "MUITO PROXIMO") << "\n"
+              << "  Total Linhas no CSV:     " << countLinesInFile(circularConfig.csvFilename) << "\n\n"
               << "  Melhor Rota Encontrada:\n";
     printRoute(circularResult.bestRoute);
 
-    printSeparator("FASE 3 CONCLUIDA COM SUCESSO: LOGS GERADOS");
+    // ========================================================================
+    // EXPERIÊNCIA 3 (BÓNUS): Cenário Circular de Alta Carga (N = 100, Raio = 100)
+    // ========================================================================
+    printSeparator("EXPERIENCIA 3 (BONUS): Alta Carga - Cenario Circular (N = 100, Raio = 100)");
+
+    const int nBonus = 100;
+    const double radius100 = 100.0;
+
+    const auto bonusCities = generateCircularPoints(nBonus, radius100);
+    const auto bonusDist = computeDistanceMatrix(bonusCities);
+
+    // Perímetro teórico para N=100, R=100: 2 * 100 * 100 * sin(pi / 100) ≈ 627.9052
+    const double theoreticalOptimal100 = 2.0 * nBonus * radius100 * std::sin(PI / nBonus);
+
+    GAConfig bonusConfig;
+    bonusConfig.populationSize  = 500;
+    bonusConfig.tournamentSize  = 3;
+    bonusConfig.crossoverRate   = 0.85;
+    bonusConfig.mutationRate    = 0.06;
+    bonusConfig.eliteCount      = 3;
+    bonusConfig.maxGenerations  = 4000;
+    bonusConfig.stagnationLimit = 700;
+    bonusConfig.seed            = 999;
+    bonusConfig.csvFilename     = (outputDir / "log_bonus_100.csv").string();
+
+    std::cout << "Configuracao do AG (Cenario Bonus N=100):\n"
+              << "  Cidades (Genes):       " << nBonus << " (Espaco de Busca: ~9.33e+157 rotas)\n"
+              << "  Raio do Circulo:       " << radius100 << "\n"
+              << "  Dist. Otima Teorica:   " << std::fixed << std::setprecision(4)
+              << theoreticalOptimal100 << "\n"
+              << "  Populacao:             " << bonusConfig.populationSize << "\n"
+              << "  Torneio (k):           " << bonusConfig.tournamentSize << "\n"
+              << "  Cruzamento (OX):       " << bonusConfig.crossoverRate * 100 << "%\n"
+              << "  Mutacao (Inversao):    " << bonusConfig.mutationRate * 100 << "%\n"
+              << "  Elitismo:              " << bonusConfig.eliteCount << " individuos\n"
+              << "  Max Geracoes:          " << bonusConfig.maxGenerations << "\n"
+              << "  Limite de Estagnacao:  " << bonusConfig.stagnationLimit << " geracoes\n"
+              << "  Ficheiro de Saida:     " << bonusConfig.csvFilename << "\n\n"
+              << "Evolucao:\n";
+
+    const GAResult bonusResult = runGA(bonusCities, bonusDist, bonusConfig);
+
+    const double diff100 = bonusResult.bestDistance - theoreticalOptimal100;
+    const double errorPerc100 = (diff100 / theoreticalOptimal100) * 100.0;
+
+    std::cout << "\nResultados Experiencia 3 (Bonus N=100):\n"
+              << "  ================ TELEMETRIA DE TEMPO ================\n"
+              << "  Tempo Total de Execucao: " << std::fixed << std::setprecision(2)
+              << bonusResult.executionTimeMs << " ms ("
+              << std::setprecision(4) << (bonusResult.executionTimeMs / 1000.0) << " segundos)\n"
+              << "  Tempo Medio por Epoca:   " << std::fixed << std::setprecision(3)
+              << (bonusResult.executionTimeMs / (bonusResult.generationsRun + 1)) << " ms/epoca\n"
+              << "  =====================================================\n"
+              << "  Razao de Paragem:        " << bonusResult.stopReason << "\n"
+              << "  Epocas Executadas:       " << bonusResult.generationsRun << "\n"
+              << "  Dist. Otima Teorica:     " << std::fixed << std::setprecision(4)
+              << theoreticalOptimal100 << "\n"
+              << "  Melhor Dist. Inicial:    " << bonusResult.initialBestDistance << "\n"
+              << "  Melhor Dist. Final (AG): " << bonusResult.bestDistance << "\n"
+              << "  Diferenca p/ Otimo:      " << diff100 << "\n"
+              << "  Erro Relativo:           " << std::setprecision(4) << errorPerc100 << "%\n"
+              << "  Proximidade do Otimo:    " << std::setprecision(2) << (100.0 - errorPerc100) << "%\n"
+              << "  Total Linhas no CSV:     " << countLinesInFile(bonusConfig.csvFilename) << "\n\n"
+              << "  Melhor Rota Encontrada:\n";
+    printRoute(bonusResult.bestRoute);
+
+    printSeparator("FASE 4 CONCLUIDA COM SUCESSO: RESULTADOS GERADOS");
     return 0;
 }
